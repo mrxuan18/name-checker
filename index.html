@@ -289,19 +289,20 @@
         }
         
         .actions {
-            display: flex;
-            gap: 10px;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
         }
         
         .action-btn {
-            flex: 1;
-            padding: 12px;
-            font-size: 14px;
+            padding: 10px 8px;
+            font-size: 13px;
             border: 1px solid #ddd;
             border-radius: 8px;
             background: white;
             cursor: pointer;
             transition: all 0.3s ease;
+            text-align: center;
         }
         
         .action-btn:hover {
@@ -323,8 +324,13 @@
             color: #4facfe;
         }
         
-        .export-btn:hover {
-            background: #4facfe;
+        .clear-btn {
+            border-color: #dc3545;
+            color: #dc3545;
+        }
+        
+        .clear-btn:hover {
+            background: #dc3545;
             color: white;
         }
         
@@ -379,7 +385,7 @@
         </div>
         
         <!-- 同步状态 -->
-        <div class="sync-status hidden" id="syncStatus">数据已同步</div>
+        <div class="sync-status hidden" id="syncStatus">数据已全球同步</div>
         
         <!-- 错误信息 -->
         <div class="error-message hidden" id="errorMessage"></div>
@@ -419,6 +425,7 @@
         <div class="actions">
             <button class="action-btn refresh-btn" onclick="refreshData()">刷新数据</button>
             <button class="action-btn export-btn" onclick="exportData()">导出记录</button>
+            <button class="action-btn clear-btn" onclick="resetAllData()">重置系统</button>
         </div>
     </div>
 
@@ -426,12 +433,30 @@
         // JSONBin.io 配置 - 已配置完成
         const CONFIG = {
             // JSONBin.io 配置
-            jsonbinApiKey: '$2a$10$ojvWkt170ilAaUn.x6U9bOfzfcZExBtUTSEp93AsckxHWjWn8aIli',  // 你的 API Key
+            jsonbinApiKey: '$2a$10$bhCC6ozl35JZkHqmTjxs6O7PGyXpBwvAUJPgTYpvmXmTgMhj/2/fC',  // 你的 API Key
             jsonbinBinId: '682f00468561e97a50198f12',     // 你的 Bin ID
             useCloudSync: true,                           // 启用云同步
             
-            // CSV文件路径
-            csvFilePath: 'alumni.csv'                     // 校友名单CSV文件路径
+            // GitHub CSV 配置
+            githubUser: 'mrxuan18',                       // 你的GitHub用户名
+            repoName: 'name-checker',                     // 你的仓库名
+            csvFileName: 'alumni.csv',                    // CSV文件名
+            useGitHubCSV: true,                          // 从GitHub加载校友名单
+            
+            // 备用校友名单（如果GitHub加载失败时使用）
+            embeddedCSV: `张三
+李四
+王五
+张三
+赵六
+孙七
+周八
+吴九
+郑十
+王刚
+王刚
+李明
+李明`
         };
         
         let alumniList = []; // 校友名单
@@ -439,48 +464,72 @@
         
         // 初始化
         document.addEventListener('DOMContentLoaded', function() {
-            loadAlumniFromCSV();
+            if (CONFIG.useGitHubCSV) {
+                loadAlumniFromGitHub();
+            } else {
+                loadEmbeddedCSV();
+            }
+            
+            if (CONFIG.useCloudSync && CONFIG.jsonbinApiKey && CONFIG.jsonbinBinId) {
+                loadClaimedFromCloud();
+            } else {
+                loadClaimedFromLocal();
+                if (!CONFIG.jsonbinApiKey || !CONFIG.jsonbinBinId) {
+                    showSyncStatus('未配置云同步，使用本地模式');
+                }
+            }
         });
         
-        // 从CSV文件加载校友名单
-        async function loadAlumniFromCSV() {
+        // 从GitHub加载校友名单
+        async function loadAlumniFromGitHub() {
             try {
-                showLoading('正在加载校友名单...');
+                showLoading('正在从GitHub加载校友名单...');
                 
-                const response = await fetch(CONFIG.csvFilePath);
+                const url = `https://raw.githubusercontent.com/${CONFIG.githubUser}/${CONFIG.repoName}/main/${CONFIG.csvFileName}`;
+                
+                const response = await fetch(url);
                 
                 if (!response.ok) {
-                    throw new Error(`无法加载CSV文件: ${response.status} ${response.statusText}`);
+                    throw new Error(`HTTP ${response.status}: 无法找到CSV文件`);
                 }
                 
                 const csvText = await response.text();
-                parseCSV(csvText);
                 
-                hideLoading();
-                showSuccess(`成功加载 ${alumniList.length} 位校友信息`);
-                
-                // 加载已领取记录
-                if (CONFIG.useCloudSync && CONFIG.jsonbinApiKey && CONFIG.jsonbinBinId) {
-                    await loadClaimedFromCloud();
-                } else {
-                    loadClaimedFromLocal();
-                    if (!CONFIG.jsonbinApiKey || !CONFIG.jsonbinBinId) {
-                        showSyncStatus('未配置云同步，使用本地模式');
-                    }
+                if (!csvText.trim()) {
+                    throw new Error('CSV文件为空');
                 }
                 
-                enableInput();
-                updateStats();
+                parseCSV(csvText);
+                showSuccess(`成功从GitHub加载 ${alumniList.length} 位校友信息`);
                 
             } catch (error) {
-                hideLoading();
-                console.error('加载校友名单失败:', error);
-                showError(`校友名单加载失败: ${error.message}`);
+                console.error('从GitHub加载校友名单失败:', error);
+                showError(`GitHub加载失败: ${error.message}`);
                 
-                // 如果CSV加载失败，仍然尝试加载已领取记录（本地模式）
-                loadClaimedFromLocal();
+                // 降级到内嵌数据
+                showLoading('使用备用校友名单...');
+                setTimeout(() => {
+                    loadEmbeddedCSV();
+                }, 1000);
+                return;
+            }
+            
+            hideLoading();
+            enableInput();
+            updateStats();
+        }
+        
+        // 加载内嵌CSV
+        function loadEmbeddedCSV() {
+            try {
+                showLoading('正在加载校友名单...');
+                parseCSV(CONFIG.embeddedCSV);
+                hideLoading();
+                showSuccess(`成功加载 ${alumniList.length} 位校友信息`);
                 enableInput();
                 updateStats();
+            } catch (error) {
+                showError('校友名单加载失败');
             }
         }
         
@@ -489,38 +538,29 @@
             try {
                 showLoading('正在同步领取记录...');
                 
-                console.log('尝试连接JSONBin...', {
-                    binId: CONFIG.jsonbinBinId,
-                    hasApiKey: !!CONFIG.jsonbinApiKey
-                });
-                
                 const response = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.jsonbinBinId}/latest`, {
                     headers: {
                         'X-Master-Key': CONFIG.jsonbinApiKey
                     }
                 });
                 
-                console.log('JSONBin响应状态:', response.status, response.statusText);
-                
                 if (response.ok) {
                     const data = await response.json();
-                    console.log('JSONBin返回数据:', data);
                     claimedList = data.record || {};
-                    showSyncStatus('数据已同步 ✅');
+                    showSyncStatus('数据已全球同步 ✅');
                 } else {
-                    const errorText = await response.text();
-                    console.error('JSONBin错误响应:', errorText);
-                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                    throw new Error(`HTTP ${response.status}`);
                 }
                 
             } catch (error) {
-                console.error('云端同步失败详细信息:', error);
-                showError(`云同步失败: ${error.message}`);
+                console.warn('云端同步失败，使用本地数据:', error);
                 loadClaimedFromLocal();
                 showSyncStatus('云同步失败，使用本地模式');
             }
             
             hideLoading();
+            enableInput();
+            updateStats();
         }
         
         // 从本地加载已领取记录
@@ -537,8 +577,6 @@
             }
             
             try {
-                console.log('尝试保存到JSONBin...', Object.keys(claimedList).length, '条记录');
-                
                 const response = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.jsonbinBinId}`, {
                     method: 'PUT',
                     headers: {
@@ -548,21 +586,14 @@
                     body: JSON.stringify(claimedList)
                 });
                 
-                console.log('保存响应状态:', response.status, response.statusText);
-                
                 if (response.ok) {
-                    const result = await response.json();
-                    console.log('保存成功:', result);
                     showSyncStatus('数据已全球同步 ✅');
                 } else {
-                    const errorText = await response.text();
-                    console.error('保存失败:', errorText);
-                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                    throw new Error(`HTTP ${response.status}`);
                 }
                 
             } catch (error) {
-                console.error('云端保存失败详细信息:', error);
-                showError(`保存失败: ${error.message}`);
+                console.warn('云端保存失败，保存到本地:', error);
                 saveClaimedToLocal();
                 showSyncStatus('云同步失败，已保存到本地');
             }
@@ -579,17 +610,10 @@
             const names = [];
             
             lines.forEach((line, index) => {
-                // 处理CSV格式，支持逗号分隔和简单的引号处理
-                const columns = line.split(',').map(col => col.trim().replace(/^["']|["']$/g, ''));
-                const name = columns[0] ? columns[0].trim() : '';
+                const columns = line.split(',');
+                const name = columns[0] ? columns[0].trim().replace(/"/g, '') : '';
                 
-                // 过滤掉标题行和空行
-                if (name && 
-                    name !== '姓名' && 
-                    name !== 'name' && 
-                    name !== '名字' && 
-                    name !== 'Name' &&
-                    !name.toLowerCase().includes('name')) {
+                if (name && name !== '姓名' && name !== 'name' && name !== '名字' && !name.includes('请在这里添加')) {
                     names.push({
                         id: `${name}_${index}`,
                         name: name,
@@ -755,8 +779,13 @@
         
         // 刷新数据
         async function refreshData() {
-            // 重新加载校友名单
-            await loadAlumniFromCSV();
+            if (CONFIG.useCloudSync && CONFIG.jsonbinApiKey && CONFIG.jsonbinBinId) {
+                await loadClaimedFromCloud();
+            } else {
+                loadClaimedFromLocal();
+                updateStats();
+                showSyncStatus('本地数据已刷新');
+            }
         }
         
         // 显示结果
@@ -788,6 +817,45 @@
             document.getElementById('totalNames').textContent = totalNames;
             document.getElementById('claimedCount').textContent = claimedCount;
             document.getElementById('remainingCount').textContent = remainingCount;
+        }
+        
+        // 重置系统（清空所有领取记录）
+        async function resetAllData() {
+            const confirmText = prompt('⚠️ 危险操作！\n\n这将清空所有领取记录，重新开始计数。\n请输入 "RESET" 确认操作：');
+            
+            if (confirmText !== 'RESET') {
+                showResult('操作已取消', 'not-found');
+                return;
+            }
+            
+            try {
+                showLoading('正在重置系统...');
+                
+                // 清空领取记录
+                claimedList = {};
+                
+                // 保存到云端和本地
+                if (CONFIG.useCloudSync && CONFIG.jsonbinApiKey && CONFIG.jsonbinBinId) {
+                    await saveClaimedToCloud();
+                } else {
+                    saveClaimedToLocal();
+                }
+                
+                // 重新加载校友名单
+                if (CONFIG.useGitHubCSV) {
+                    await loadAlumniFromGitHub();
+                }
+                
+                hideLoading();
+                updateStats();
+                showResult('系统已重置，所有记录已清空 🔄', 'available');
+                showSyncStatus('系统重置完成');
+                
+            } catch (error) {
+                hideLoading();
+                showError('重置失败，请稍后重试');
+                console.error('重置失败:', error);
+            }
         }
         
         // 导出数据
