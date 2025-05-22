@@ -430,31 +430,8 @@
             jsonbinBinId: '682f00468561e97a50198f12',     // 你的 Bin ID
             useCloudSync: true,                           // 启用云同步
             
-            // 校友名单（请在这里添加真实的校友名单）
-            embeddedCSV: `张三
-李四
-王五
-张三
-赵六
-孙七
-周八
-吴九
-郑十
-王刚
-王刚
-李明
-李明
-陈红
-陈红
-刘芳
-刘芳
-小明
-小红
-小李
-小王
-请在这里添加你的真实校友名单
-每行一个姓名
-支持重名`
+            // CSV文件路径
+            csvFilePath: 'alumni.csv'                     // 校友名单CSV文件路径
         };
         
         let alumniList = []; // 校友名单
@@ -462,28 +439,48 @@
         
         // 初始化
         document.addEventListener('DOMContentLoaded', function() {
-            loadEmbeddedCSV();
-            if (CONFIG.useCloudSync && CONFIG.jsonbinApiKey && CONFIG.jsonbinBinId) {
-                loadClaimedFromCloud();
-            } else {
-                loadClaimedFromLocal();
-                if (!CONFIG.jsonbinApiKey || !CONFIG.jsonbinBinId) {
-                    showSyncStatus('未配置云同步，使用本地模式');
-                }
-            }
+            loadAlumniFromCSV();
         });
         
-        // 加载内嵌CSV
-        function loadEmbeddedCSV() {
+        // 从CSV文件加载校友名单
+        async function loadAlumniFromCSV() {
             try {
                 showLoading('正在加载校友名单...');
-                parseCSV(CONFIG.embeddedCSV);
+                
+                const response = await fetch(CONFIG.csvFilePath);
+                
+                if (!response.ok) {
+                    throw new Error(`无法加载CSV文件: ${response.status} ${response.statusText}`);
+                }
+                
+                const csvText = await response.text();
+                parseCSV(csvText);
+                
                 hideLoading();
                 showSuccess(`成功加载 ${alumniList.length} 位校友信息`);
+                
+                // 加载已领取记录
+                if (CONFIG.useCloudSync && CONFIG.jsonbinApiKey && CONFIG.jsonbinBinId) {
+                    await loadClaimedFromCloud();
+                } else {
+                    loadClaimedFromLocal();
+                    if (!CONFIG.jsonbinApiKey || !CONFIG.jsonbinBinId) {
+                        showSyncStatus('未配置云同步，使用本地模式');
+                    }
+                }
+                
                 enableInput();
                 updateStats();
+                
             } catch (error) {
-                showError('校友名单加载失败');
+                hideLoading();
+                console.error('加载校友名单失败:', error);
+                showError(`校友名单加载失败: ${error.message}`);
+                
+                // 如果CSV加载失败，仍然尝试加载已领取记录（本地模式）
+                loadClaimedFromLocal();
+                enableInput();
+                updateStats();
             }
         }
         
@@ -524,8 +521,6 @@
             }
             
             hideLoading();
-            enableInput();
-            updateStats();
         }
         
         // 从本地加载已领取记录
@@ -584,10 +579,17 @@
             const names = [];
             
             lines.forEach((line, index) => {
-                const columns = line.split(',');
-                const name = columns[0] ? columns[0].trim().replace(/"/g, '') : '';
+                // 处理CSV格式，支持逗号分隔和简单的引号处理
+                const columns = line.split(',').map(col => col.trim().replace(/^["']|["']$/g, ''));
+                const name = columns[0] ? columns[0].trim() : '';
                 
-                if (name && name !== '姓名' && name !== 'name' && name !== '名字' && !name.includes('请在这里添加')) {
+                // 过滤掉标题行和空行
+                if (name && 
+                    name !== '姓名' && 
+                    name !== 'name' && 
+                    name !== '名字' && 
+                    name !== 'Name' &&
+                    !name.toLowerCase().includes('name')) {
                     names.push({
                         id: `${name}_${index}`,
                         name: name,
@@ -753,13 +755,8 @@
         
         // 刷新数据
         async function refreshData() {
-            if (CONFIG.useCloudSync && CONFIG.jsonbinApiKey && CONFIG.jsonbinBinId) {
-                await loadClaimedFromCloud();
-            } else {
-                loadClaimedFromLocal();
-                updateStats();
-                showSyncStatus('本地数据已刷新');
-            }
+            // 重新加载校友名单
+            await loadAlumniFromCSV();
         }
         
         // 显示结果
