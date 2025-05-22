@@ -547,7 +547,7 @@
                 if (response.ok) {
                     const data = await response.json();
                     claimedList = data.record || {};
-                    showSyncStatus('数据已全球同步 ✅');
+                    showSyncStatus('数据已同步 ✅');
                 } else {
                     throw new Error(`HTTP ${response.status}`);
                 }
