@@ -506,7 +506,7 @@
                     const data = await response.json();
                     console.log('JSONBin返回数据:', data);
                     claimedList = data.record || {};
-                    showSyncStatus('数据已全球同步 ✅');
+                    showSyncStatus('数据已同步 ✅');
                 } else {
                     const errorText = await response.text();
                     console.error('JSONBin错误响应:', errorText);
