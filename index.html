@@ -104,8 +104,8 @@
             font-size: 12px;
         }
         
-        .tencent-cloud-badge {
-            background: linear-gradient(135deg, #1890ff 0%, #36cfc9 100%);
+        .cloud-badge {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
             color: white;
             padding: 5px 10px;
             border-radius: 12px;
@@ -370,11 +370,11 @@
         <h1 class="title">🎁 校友礼品领取系统</h1>
         <p class="subtitle">输入您的姓名查询礼品领取状态</p>
         
-        <div class="tencent-cloud-badge">⚡ 腾讯云开发驱动</div>
+        <div class="cloud-badge">⚡ JSONBin云同步驱动</div>
         
         <!-- 加载状态 -->
         <div class="loading-container" id="loadingContainer">
-            <div class="loading-text" id="loadingText">正在初始化云开发...</div>
+            <div class="loading-text" id="loadingText">正在加载校友名单...</div>
             <div class="loading-spinner" id="loadingSpinner"></div>
         </div>
         
@@ -422,15 +422,15 @@
         </div>
     </div>
 
-    <script src="https://tcb-js-sdk-d3s9b.tcloudbaseapp.com/tcb.js"></script>
     <script>
-        // 腾讯云开发配置 - 已配置好你的环境
+        // JSONBin.io 配置 - 已配置完成
         const CONFIG = {
-            // 腾讯云开发配置
-            envId: 'app-a1hm37m4',                // 你的环境ID
+            // JSONBin.io 配置
+            jsonbinApiKey: '$2a$10$bhCC6oz135JZkHqmTjxs607PGyXpBwvAUJPgTYpvmXmTgMhj/2/fC',
+            jsonbinBinId: '682f00468561e97a50198f12',
+            useCloudSync: true,                   // 已启用云同步
             
             // 校友名单（请在这里添加真实的校友名单）
-            useCloudAlumniList: false,            
             embeddedCSV: `张三
 李四
 王五
@@ -454,139 +454,108 @@
 小王
 请在这里添加你的真实校友名单
 每行一个姓名
-支持重名`,
-            
-            // 数据库集合名称
-            alumniCollection: 'alumni_list',      
-            claimedCollection: 'claimed_records'  // 你刚创建的集合
+支持重名`
         };
         
-        let app; // 腾讯云开发实例
-        let db;  // 数据库实例
         let alumniList = []; // 校友名单
         let claimedList = {}; // 已领取记录
         
         // 初始化
         document.addEventListener('DOMContentLoaded', function() {
-            initTencentCloud();
+            loadEmbeddedCSV();
+            if (CONFIG.useCloudSync && CONFIG.jsonbinApiKey && CONFIG.jsonbinBinId) {
+                loadClaimedFromCloud();
+            } else {
+                loadClaimedFromLocal();
+                if (!CONFIG.jsonbinApiKey || !CONFIG.jsonbinBinId) {
+                    showSyncStatus('未配置云同步，使用本地模式');
+                }
+            }
         });
         
-        // 初始化腾讯云开发
-        async function initTencentCloud() {
+        // 加载内嵌CSV
+        function loadEmbeddedCSV() {
             try {
-                if (!CONFIG.envId) {
-                    throw new Error('请配置腾讯云开发环境ID');
-                }
-                
-                showLoading('正在初始化腾讯云开发...');
-                
-                // 初始化云开发
-                app = tcb.init({
-                    env: CONFIG.envId
-                });
-                
-                db = app.database();
-                
-                // 匿名登录
-                await app.auth().anonymousSignIn();
-                
                 showLoading('正在加载校友名单...');
-                await loadAlumniList();
-                
-                showLoading('正在同步领取记录...');
-                await loadClaimedRecords();
-                
+                parseCSV(CONFIG.embeddedCSV);
                 hideLoading();
-                showSyncStatus('腾讯云开发已连接');
+                showSuccess(`成功加载 ${alumniList.length} 位校友信息`);
                 enableInput();
                 updateStats();
-                
             } catch (error) {
-                console.error('腾讯云开发初始化失败:', error);
-                showError(`初始化失败: ${error.message}`);
-                
-                // 降级到本地模式
-                fallbackToLocal();
+                showError('校友名单加载失败');
             }
         }
         
-        // 降级到本地模式
-        function fallbackToLocal() {
-            showLoading('使用本地模式...');
-            parseCSV(CONFIG.embeddedCSV);
-            loadClaimedListLocal();
+        // 从云端加载已领取记录
+        async function loadClaimedFromCloud() {
+            try {
+                showLoading('正在同步领取记录...');
+                
+                const response = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.jsonbinBinId}/latest`, {
+                    headers: {
+                        'X-Master-Key': CONFIG.jsonbinApiKey
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    claimedList = data.record || {};
+                    showSyncStatus('数据已全球同步 ✅');
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+            } catch (error) {
+                console.warn('云端同步失败，使用本地数据:', error);
+                loadClaimedFromLocal();
+                showSyncStatus('云同步失败，使用本地模式');
+            }
+            
             hideLoading();
-            showSyncStatus('使用本地模式（数据不同步）');
             enableInput();
             updateStats();
         }
         
-        // 加载校友名单
-        async function loadAlumniList() {
-            if (CONFIG.useCloudAlumniList) {
-                // 从云数据库加载
-                try {
-                    const result = await db.collection(CONFIG.alumniCollection).get();
-                    if (result.data && result.data.length > 0) {
-                        alumniList = result.data;
-                    } else {
-                        throw new Error('云端校友名单为空');
-                    }
-                } catch (error) {
-                    console.warn('从云端加载校友名单失败，使用内嵌数据:', error);
-                    parseCSV(CONFIG.embeddedCSV);
-                }
-            } else {
-                // 使用内嵌数据
-                parseCSV(CONFIG.embeddedCSV);
-            }
+        // 从本地加载已领取记录
+        function loadClaimedFromLocal() {
+            const stored = localStorage.getItem('claimedList');
+            claimedList = stored ? JSON.parse(stored) : {};
         }
         
-        // 加载领取记录
-        async function loadClaimedRecords() {
+        // 保存已领取记录到云端
+        async function saveClaimedToCloud() {
+            if (!CONFIG.useCloudSync || !CONFIG.jsonbinApiKey || !CONFIG.jsonbinBinId) {
+                saveClaimedToLocal();
+                return;
+            }
+            
             try {
-                const result = await db.collection(CONFIG.claimedCollection).get();
-                
-                claimedList = {};
-                result.data.forEach(record => {
-                    claimedList[record.alumniId] = {
-                        name: record.name,
-                        timestamp: record.timestamp,
-                        date: record.date,
-                        _id: record._id
-                    };
+                const response = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.jsonbinBinId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Master-Key': CONFIG.jsonbinApiKey
+                    },
+                    body: JSON.stringify(claimedList)
                 });
                 
+                if (response.ok) {
+                    showSyncStatus('数据已全球同步 ✅');
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
             } catch (error) {
-                console.warn('加载领取记录失败:', error);
-                claimedList = {};
+                console.warn('云端保存失败，保存到本地:', error);
+                saveClaimedToLocal();
+                showSyncStatus('云同步失败，已保存到本地');
             }
         }
         
-        // 保存领取记录到云数据库
-        async function saveClaimedRecord(alumni) {
-            try {
-                const record = {
-                    alumniId: alumni.id,
-                    name: alumni.name,
-                    timestamp: new Date().toISOString(),
-                    date: new Date().toISOString().split('T')[0],
-                    deviceInfo: navigator.userAgent.substring(0, 100) // 记录设备信息
-                };
-                
-                const result = await db.collection(CONFIG.claimedCollection).add(record);
-                
-                // 更新本地记录
-                claimedList[alumni.id] = {
-                    ...record,
-                    _id: result.id
-                };
-                
-                return true;
-            } catch (error) {
-                console.error('保存到云端失败:', error);
-                throw error;
-            }
+        // 保存到本地
+        function saveClaimedToLocal() {
+            localStorage.setItem('claimedList', JSON.stringify(claimedList));
         }
         
         // 解析CSV
@@ -598,7 +567,7 @@
                 const columns = line.split(',');
                 const name = columns[0] ? columns[0].trim().replace(/"/g, '') : '';
                 
-                if (name && name !== '姓名' && name !== 'name' && name !== '名字') {
+                if (name && name !== '姓名' && name !== 'name' && name !== '名字' && !name.includes('请在这里添加')) {
                     names.push({
                         id: `${name}_${index}`,
                         name: name,
@@ -612,16 +581,6 @@
             }
             
             alumniList = names;
-        }
-        
-        // 本地存储相关函数
-        function loadClaimedListLocal() {
-            const stored = localStorage.getItem('claimedList');
-            claimedList = stored ? JSON.parse(stored) : {};
-        }
-        
-        function saveClaimedListLocal() {
-            localStorage.setItem('claimedList', JSON.stringify(claimedList));
         }
         
         // 显示加载状态
@@ -757,45 +716,27 @@
         async function claimGift(alumni) {
             showLoading('正在处理领取...');
             
-            try {
-                if (app && db) {
-                    // 使用腾讯云开发
-                    await saveClaimedRecord(alumni);
-                    showSyncStatus('数据已全球同步');
-                } else {
-                    // 本地模式
-                    claimedList[alumni.id] = {
-                        name: alumni.name,
-                        timestamp: new Date().toISOString(),
-                        date: new Date().toISOString().split('T')[0]
-                    };
-                    saveClaimedListLocal();
-                    showSyncStatus('已保存到本地');
-                }
-                
-                hideLoading();
-                updateStats();
-                showResult(`恭喜 ${alumni.name}！礼品领取成功 🎉`, 'available');
-                
-                document.getElementById('nameInput').value = '';
-                
-            } catch (error) {
-                hideLoading();
-                showError('领取失败，请稍后重试');
-                console.error('领取失败:', error);
-            }
+            claimedList[alumni.id] = {
+                name: alumni.name,
+                timestamp: new Date().toISOString(),
+                date: new Date().toISOString().split('T')[0]
+            };
+            
+            await saveClaimedToCloud();
+            
+            hideLoading();
+            updateStats();
+            showResult(`恭喜 ${alumni.name}！礼品领取成功 🎉`, 'available');
+            
+            document.getElementById('nameInput').value = '';
         }
         
         // 刷新数据
         async function refreshData() {
-            if (app && db) {
-                showLoading('正在刷新数据...');
-                await loadClaimedRecords();
-                hideLoading();
-                updateStats();
-                showSyncStatus('数据已刷新');
+            if (CONFIG.useCloudSync && CONFIG.jsonbinApiKey && CONFIG.jsonbinBinId) {
+                await loadClaimedFromCloud();
             } else {
-                loadClaimedListLocal();
+                loadClaimedFromLocal();
                 updateStats();
                 showSyncStatus('本地数据已刷新');
             }
