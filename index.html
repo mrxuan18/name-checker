@@ -94,6 +94,26 @@
             font-size: 14px;
         }
         
+        .sync-status {
+            background: #cce7ff;
+            color: #004085;
+            border: 1px solid #99d5ff;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 12px;
+        }
+        
+        .tencent-cloud-badge {
+            background: linear-gradient(135deg, #1890ff 0%, #36cfc9 100%);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            margin-bottom: 15px;
+            display: inline-block;
+        }
+        
         .input-group {
             margin-bottom: 25px;
         }
@@ -288,13 +308,13 @@
             background: #f8f9fa;
         }
         
-        .clear-btn {
-            border-color: #ff6b6b;
-            color: #ff6b6b;
+        .refresh-btn {
+            border-color: #28a745;
+            color: #28a745;
         }
         
-        .clear-btn:hover {
-            background: #ff6b6b;
+        .refresh-btn:hover {
+            background: #28a745;
             color: white;
         }
         
@@ -350,11 +370,16 @@
         <h1 class="title">🎁 校友礼品领取系统</h1>
         <p class="subtitle">输入您的姓名查询礼品领取状态</p>
         
+        <div class="tencent-cloud-badge">⚡ 腾讯云开发驱动</div>
+        
         <!-- 加载状态 -->
         <div class="loading-container" id="loadingContainer">
-            <div class="loading-text" id="loadingText">正在加载校友名单...</div>
+            <div class="loading-text" id="loadingText">正在初始化云开发...</div>
             <div class="loading-spinner" id="loadingSpinner"></div>
         </div>
+        
+        <!-- 同步状态 -->
+        <div class="sync-status hidden" id="syncStatus">数据已全球同步</div>
         
         <!-- 错误信息 -->
         <div class="error-message hidden" id="errorMessage"></div>
@@ -392,70 +417,175 @@
         <div class="result" id="result"></div>
         
         <div class="actions">
-            <button class="action-btn export-btn" onclick="exportData()">导出领取记录</button>
-            <button class="action-btn clear-btn" onclick="clearClaimedData()">清空领取记录</button>
+            <button class="action-btn refresh-btn" onclick="refreshData()">刷新数据</button>
+            <button class="action-btn export-btn" onclick="exportData()">导出记录</button>
         </div>
     </div>
 
+    <script src="https://tcb-js-sdk-d3s9b.tcloudbaseapp.com/tcb.js"></script>
     <script>
-        // 配置信息 - 请修改为你的GitHub信息
+        // 腾讯云开发配置 - 已配置好你的环境
         const CONFIG = {
-            githubUser: 'mrxuan18',        // 你的GitHub用户名
-            repoName: 'name-checker',      // 你的仓库名
-            fileName: 'alumni.csv'         // 校友名单文件名
+            // 腾讯云开发配置
+            envId: 'app-a1hm37m4',                // 你的环境ID
+            
+            // 校友名单（请在这里添加真实的校友名单）
+            useCloudAlumniList: false,            
+            embeddedCSV: `张三
+李四
+王五
+张三
+赵六
+孙七
+周八
+吴九
+郑十
+王刚
+王刚
+李明
+李明
+陈红
+陈红
+刘芳
+刘芳
+小明
+小红
+小李
+小王
+请在这里添加你的真实校友名单
+每行一个姓名
+支持重名`,
+            
+            // 数据库集合名称
+            alumniCollection: 'alumni_list',      
+            claimedCollection: 'claimed_records'  // 你刚创建的集合
         };
         
-        // 存储键名
-        const CLAIMED_LIST_KEY = 'claimedList';
-        
+        let app; // 腾讯云开发实例
+        let db;  // 数据库实例
         let alumniList = []; // 校友名单
         let claimedList = {}; // 已领取记录
         
         // 初始化
         document.addEventListener('DOMContentLoaded', function() {
-            loadAlumniFromGitHub();
-            loadClaimedList();
+            initTencentCloud();
         });
         
-        // 从GitHub加载校友名单
-        async function loadAlumniFromGitHub() {
+        // 初始化腾讯云开发
+        async function initTencentCloud() {
             try {
+                if (!CONFIG.envId) {
+                    throw new Error('请配置腾讯云开发环境ID');
+                }
+                
+                showLoading('正在初始化腾讯云开发...');
+                
+                // 初始化云开发
+                app = tcb.init({
+                    env: CONFIG.envId
+                });
+                
+                db = app.database();
+                
+                // 匿名登录
+                await app.auth().anonymousSignIn();
+                
                 showLoading('正在加载校友名单...');
+                await loadAlumniList();
                 
-                const url = `https://raw.githubusercontent.com/${CONFIG.githubUser}/${CONFIG.repoName}/main/${CONFIG.fileName}`;
+                showLoading('正在同步领取记录...');
+                await loadClaimedRecords();
                 
-                const response = await fetch(url);
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: 无法找到文件`);
-                }
-                
-                const csvText = await response.text();
-                
-                if (!csvText.trim()) {
-                    throw new Error('CSV文件为空');
-                }
-                
-                parseCSV(csvText);
                 hideLoading();
-                showSuccess(`成功加载 ${alumniList.length} 位校友信息`);
+                showSyncStatus('腾讯云开发已连接');
                 enableInput();
                 updateStats();
                 
             } catch (error) {
-                console.error('加载校友名单失败:', error);
-                hideLoading();
+                console.error('腾讯云开发初始化失败:', error);
+                showError(`初始化失败: ${error.message}`);
                 
-                let errorMsg = '校友名单加载失败';
-                if (error.message.includes('404')) {
-                    errorMsg = `未找到文件 ${CONFIG.fileName}，请确认文件已上传到仓库根目录`;
-                } else if (error.message.includes('403')) {
-                    errorMsg = '仓库访问被拒绝，请确认仓库为公开状态';
-                } else {
-                    errorMsg = `加载失败: ${error.message}`;
+                // 降级到本地模式
+                fallbackToLocal();
+            }
+        }
+        
+        // 降级到本地模式
+        function fallbackToLocal() {
+            showLoading('使用本地模式...');
+            parseCSV(CONFIG.embeddedCSV);
+            loadClaimedListLocal();
+            hideLoading();
+            showSyncStatus('使用本地模式（数据不同步）');
+            enableInput();
+            updateStats();
+        }
+        
+        // 加载校友名单
+        async function loadAlumniList() {
+            if (CONFIG.useCloudAlumniList) {
+                // 从云数据库加载
+                try {
+                    const result = await db.collection(CONFIG.alumniCollection).get();
+                    if (result.data && result.data.length > 0) {
+                        alumniList = result.data;
+                    } else {
+                        throw new Error('云端校友名单为空');
+                    }
+                } catch (error) {
+                    console.warn('从云端加载校友名单失败，使用内嵌数据:', error);
+                    parseCSV(CONFIG.embeddedCSV);
                 }
+            } else {
+                // 使用内嵌数据
+                parseCSV(CONFIG.embeddedCSV);
+            }
+        }
+        
+        // 加载领取记录
+        async function loadClaimedRecords() {
+            try {
+                const result = await db.collection(CONFIG.claimedCollection).get();
                 
-                showError(errorMsg);
+                claimedList = {};
+                result.data.forEach(record => {
+                    claimedList[record.alumniId] = {
+                        name: record.name,
+                        timestamp: record.timestamp,
+                        date: record.date,
+                        _id: record._id
+                    };
+                });
+                
+            } catch (error) {
+                console.warn('加载领取记录失败:', error);
+                claimedList = {};
+            }
+        }
+        
+        // 保存领取记录到云数据库
+        async function saveClaimedRecord(alumni) {
+            try {
+                const record = {
+                    alumniId: alumni.id,
+                    name: alumni.name,
+                    timestamp: new Date().toISOString(),
+                    date: new Date().toISOString().split('T')[0],
+                    deviceInfo: navigator.userAgent.substring(0, 100) // 记录设备信息
+                };
+                
+                const result = await db.collection(CONFIG.claimedCollection).add(record);
+                
+                // 更新本地记录
+                claimedList[alumni.id] = {
+                    ...record,
+                    _id: result.id
+                };
+                
+                return true;
+            } catch (error) {
+                console.error('保存到云端失败:', error);
+                throw error;
             }
         }
         
@@ -468,9 +598,9 @@
                 const columns = line.split(',');
                 const name = columns[0] ? columns[0].trim().replace(/"/g, '') : '';
                 
-                if (name && name !== '姓名' && name !== 'name' && name !== '名字') { // 跳过表头
+                if (name && name !== '姓名' && name !== 'name' && name !== '名字') {
                     names.push({
-                        id: `${name}_${index}`, // 唯一ID
+                        id: `${name}_${index}`,
                         name: name,
                         originalIndex: index
                     });
@@ -482,6 +612,16 @@
             }
             
             alumniList = names;
+        }
+        
+        // 本地存储相关函数
+        function loadClaimedListLocal() {
+            const stored = localStorage.getItem('claimedList');
+            claimedList = stored ? JSON.parse(stored) : {};
+        }
+        
+        function saveClaimedListLocal() {
+            localStorage.setItem('claimedList', JSON.stringify(claimedList));
         }
         
         // 显示加载状态
@@ -497,6 +637,15 @@
             document.getElementById('loadingContainer').classList.add('hidden');
         }
         
+        // 显示同步状态
+        function showSyncStatus(message) {
+            document.getElementById('syncStatus').textContent = message;
+            document.getElementById('syncStatus').classList.remove('hidden');
+            setTimeout(() => {
+                document.getElementById('syncStatus').classList.add('hidden');
+            }, 3000);
+        }
+        
         // 显示错误信息
         function showError(message) {
             document.getElementById('errorMessage').textContent = message;
@@ -510,7 +659,6 @@
             document.getElementById('successMessage').classList.remove('hidden');
             document.getElementById('errorMessage').classList.add('hidden');
             
-            // 3秒后自动隐藏
             setTimeout(() => {
                 document.getElementById('successMessage').classList.add('hidden');
             }, 3000);
@@ -520,17 +668,6 @@
         function enableInput() {
             document.getElementById('nameInput').disabled = false;
             document.getElementById('checkBtn').disabled = false;
-        }
-        
-        // 加载已领取记录
-        function loadClaimedList() {
-            const stored = localStorage.getItem(CLAIMED_LIST_KEY);
-            claimedList = stored ? JSON.parse(stored) : {};
-        }
-        
-        // 保存已领取记录
-        function saveClaimedList() {
-            localStorage.setItem(CLAIMED_LIST_KEY, JSON.stringify(claimedList));
         }
         
         // 检查姓名
@@ -543,7 +680,6 @@
                 return;
             }
             
-            // 查找所有匹配的校友
             const matchedAlumni = alumniList.filter(alumni => alumni.name === name);
             
             if (matchedAlumni.length === 0) {
@@ -553,10 +689,8 @@
             }
             
             if (matchedAlumni.length === 1) {
-                // 只有一个匹配，直接处理
                 handleSingleMatch(matchedAlumni[0]);
             } else {
-                // 多个匹配，显示选择选项
                 showDuplicateOptions(matchedAlumni);
             }
         }
@@ -620,19 +754,51 @@
         }
         
         // 领取礼品
-        function claimGift(alumni) {
-            claimedList[alumni.id] = {
-                name: alumni.name,
-                timestamp: new Date().toISOString(),
-                date: new Date().toISOString().split('T')[0]
-            };
+        async function claimGift(alumni) {
+            showLoading('正在处理领取...');
             
-            saveClaimedList();
-            updateStats();
-            showResult(`恭喜 ${alumni.name}！礼品领取成功 🎉`, 'available');
-            
-            // 清空输入框
-            document.getElementById('nameInput').value = '';
+            try {
+                if (app && db) {
+                    // 使用腾讯云开发
+                    await saveClaimedRecord(alumni);
+                    showSyncStatus('数据已全球同步');
+                } else {
+                    // 本地模式
+                    claimedList[alumni.id] = {
+                        name: alumni.name,
+                        timestamp: new Date().toISOString(),
+                        date: new Date().toISOString().split('T')[0]
+                    };
+                    saveClaimedListLocal();
+                    showSyncStatus('已保存到本地');
+                }
+                
+                hideLoading();
+                updateStats();
+                showResult(`恭喜 ${alumni.name}！礼品领取成功 🎉`, 'available');
+                
+                document.getElementById('nameInput').value = '';
+                
+            } catch (error) {
+                hideLoading();
+                showError('领取失败，请稍后重试');
+                console.error('领取失败:', error);
+            }
+        }
+        
+        // 刷新数据
+        async function refreshData() {
+            if (app && db) {
+                showLoading('正在刷新数据...');
+                await loadClaimedRecords();
+                hideLoading();
+                updateStats();
+                showSyncStatus('数据已刷新');
+            } else {
+                loadClaimedListLocal();
+                updateStats();
+                showSyncStatus('本地数据已刷新');
+            }
         }
         
         // 显示结果
@@ -689,16 +855,6 @@
             URL.revokeObjectURL(url);
             
             showResult('领取记录导出成功！', 'available');
-        }
-        
-        // 清空已领取数据
-        function clearClaimedData() {
-            if (confirm('确定要清空所有领取记录吗？此操作无法撤销！')) {
-                claimedList = {};
-                localStorage.removeItem(CLAIMED_LIST_KEY);
-                updateStats();
-                showResult('领取记录已清空', 'taken');
-            }
         }
         
         // 回车键支持
