@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>校友礼品领取系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+        
+        .title {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 30px;
+        }
+        
+        .file-upload {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 2px dashed #ddd;
+            border-radius: 12px;
+            background: #f8f9fa;
+        }
+        
+        .file-input {
+            width: 100%;
+            padding: 10px;
+            font-size: 14px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        
+        .upload-btn {
+            width: 100%;
+            padding: 10px;
+            font-size: 14px;
+            color: white;
+            background: #28a745;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        
+        .upload-btn:hover {
+            background: #218838;
+        }
+        
+        .upload-status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 14px;
+            display: none;
+        }
+        
+        .upload-status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .input-group {
+            margin-bottom: 25px;
+        }
+        
+        .name-input {
+            width: 100%;
+            padding: 15px 20px;
+            font-size: 16px;
+            border: 2px solid #e1e5e9;
+            border-radius: 12px;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+        
+        .name-input:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .name-input:disabled {
+            background: #f8f9fa;
+            color: #6c757d;
+        }
+        
+        .check-btn {
+            width: 100%;
+            padding: 15px;
+            font-size: 16px;
+            font-weight: bold;
+            color: white;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 20px;
+        }
+        
+        .check-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+        }
+        
+        .check-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .result {
+            padding: 20px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.3s ease;
+        }
+        
+        .result.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .result.available {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+        }
+        
+        .result.taken {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+            color: white;
+        }
+        
+        .result.not-found {
+            background: linear-gradient(135deg, #ffa726 0%, #fb8c00 100%);
+            color: white;
+        }
+        
+        .duplicate-options {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .duplicate-title {
+            font-size: 14px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .duplicate-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .duplicate-item:last-child {
+            border-bottom: none;
+        }
+        
+        .duplicate-name {
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .duplicate-status {
+            font-size: 12px;
+            padding: 3px 8px;
+            border-radius: 12px;
+        }
+        
+        .status-available {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-taken {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .duplicate-btn {
+            padding: 6px 12px;
+            font-size: 12px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            background: #667eea;
+            color: white;
+        }
+        
+        .duplicate-btn:hover {
+            background: #5a6fd8;
+        }
+        
+        .duplicate-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        
+        .stats {
+            display: flex;
+            justify-content: space-between;
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-item {
+            text-align: center;
+            flex: 1;
+        }
+        
+        .stat-number {
+            font-size: 20px;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .action-btn {
+            flex: 1;
+            padding: 12px;
+            font-size: 14px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .action-btn:hover {
+            background: #f8f9fa;
+        }
+        
+        .clear-btn {
+            border-color: #ff6b6b;
+            color: #ff6b6b;
+        }
+        
+        .clear-btn:hover {
+            background: #ff6b6b;
+            color: white;
+        }
+        
+        .export-btn {
+            border-color: #4facfe;
+            color: #4facfe;
+        }
+        
+        .export-btn:hover {
+            background: #4facfe;
+            color: white;
+        }
+        
+        .animation {
+            animation: fadeInUp 0.5s ease;
+        }
+        
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        /* 微信适配 */
+        @media screen and (max-width: 480px) {
+            .container {
+                padding: 20px;
+                margin: 10px;
+            }
+            
+            .title {
+                font-size: 20px;
+            }
+            
+            .name-input, .check-btn {
+                font-size: 16px;
+                padding: 12px 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container animation">
+        <h1 class="title">🎁 校友礼品领取系统</h1>
+        <p class="subtitle">请先上传校友名单，然后输入姓名领取礼品</p>
+        
+        <!-- 文件上传区域 -->
+        <div class="file-upload">
+            <input type="file" class="file-input" id="csvFile" accept=".csv" />
+            <button class="upload-btn" onclick="uploadCSV()">上传校友名单 (CSV)</button>
+            <div class="upload-status" id="uploadStatus"></div>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-item">
+                <div class="stat-number" id="totalNames">0</div>
+                <div class="stat-label">校友总数</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number" id="claimedCount">0</div>
+                <div class="stat-label">已领取</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number" id="remainingCount">0</div>
+                <div class="stat-label">待领取</div>
+            </div>
+        </div>
+        
+        <div class="input-group">
+            <input type="text" class="name-input" id="nameInput" placeholder="请输入您的姓名..." maxlength="20" disabled>
+        </div>
+        
+        <button class="check-btn" id="checkBtn" onclick="checkName()" disabled>查询领取状态</button>
+        
+        <!-- 重名选择区域 -->
+        <div class="duplicate-options" id="duplicateOptions">
+            <div class="duplicate-title">检测到重名，请选择您的信息：</div>
+            <div id="duplicateList"></div>
+        </div>
+        
+        <div class="result" id="result"></div>
+        
+        <div class="actions">
+            <button class="action-btn export-btn" onclick="exportData()">导出领取记录</button>
+            <button class="action-btn clear-btn" onclick="clearClaimedData()">清空领取记录</button>
+        </div>
+    </div>
+
+    <script>
+        // 存储键名
+        const ALUMNI_LIST_KEY = 'alumniList';
+        const CLAIMED_LIST_KEY = 'claimedList';
+        
+        let alumniList = []; // 校友名单
+        let claimedList = {}; // 已领取记录
+        
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadAlumniList();
+            loadClaimedList();
+            updateStats();
+        });
+        
+        // 上传CSV文件
+        function uploadCSV() {
+            const fileInput = document.getElementById('csvFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                showUploadStatus('请先选择CSV文件', 'error');
+                return;
+            }
+            
+            if (!file.name.toLowerCase().endsWith('.csv')) {
+                showUploadStatus('请上传CSV格式的文件', 'error');
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const csvText = e.target.result;
+                    parseCSV(csvText);
+                } catch (error) {
+                    showUploadStatus('文件读取失败，请检查文件格式', 'error');
+                }
+            };
+            
+            reader.readAsText(file, 'UTF-8');
+        }
+        
+        // 解析CSV
+        function parseCSV(csvText) {
+            const lines = csvText.split('\n').filter(line => line.trim());
+            const names = [];
+            
+            lines.forEach((line, index) => {
+                const columns = line.split(',');
+                const name = columns[0] ? columns[0].trim().replace(/"/g, '') : '';
+                
+                if (name && name !== '姓名' && name !== 'name') { // 跳过表头
+                    names.push({
+                        id: `${name}_${index}`, // 唯一ID
+                        name: name,
+                        originalIndex: index
+                    });
+                }
+            });
+            
+            if (names.length === 0) {
+                showUploadStatus('CSV文件中没有找到有效的姓名数据', 'error');
+                return;
+            }
+            
+            alumniList = names;
+            localStorage.setItem(ALUMNI_LIST_KEY, JSON.stringify(alumniList));
+            
+            showUploadStatus(`成功导入 ${names.length} 位校友信息`, 'success');
+            
+            // 启用输入功能
+            document.getElementById('nameInput').disabled = false;
+            document.getElementById('checkBtn').disabled = false;
+            
+            updateStats();
+        }
+        
+        // 显示上传状态
+        function showUploadStatus(message, type) {
+            const status = document.getElementById('uploadStatus');
+            status.textContent = message;
+            status.className = `upload-status ${type}`;
+            status.style.display = 'block';
+            
+            setTimeout(() => {
+                status.style.display = 'none';
+            }, 3000);
+        }
+        
+        // 加载校友名单
+        function loadAlumniList() {
+            const stored = localStorage.getItem(ALUMNI_LIST_KEY);
+            if (stored) {
+                alumniList = JSON.parse(stored);
+                document.getElementById('nameInput').disabled = false;
+                document.getElementById('checkBtn').disabled = false;
+            }
+        }
+        
+        // 加载已领取记录
+        function loadClaimedList() {
+            const stored = localStorage.getItem(CLAIMED_LIST_KEY);
+            claimedList = stored ? JSON.parse(stored) : {};
+        }
+        
+        // 保存已领取记录
+        function saveClaimedList() {
+            localStorage.setItem(CLAIMED_LIST_KEY, JSON.stringify(claimedList));
+        }
+        
+        // 检查姓名
+        function checkName() {
+            const nameInput = document.getElementById('nameInput');
+            const name = nameInput.value.trim();
+            
+            if (!name) {
+                showResult('请输入您的姓名！', 'not-found');
+                return;
+            }
+            
+            // 查找所有匹配的校友
+            const matchedAlumni = alumniList.filter(alumni => alumni.name === name);
+            
+            if (matchedAlumni.length === 0) {
+                showResult(`抱歉，未找到 "${name}" 的校友信息`, 'not-found');
+                hideDuplicateOptions();
+                return;
+            }
+            
+            if (matchedAlumni.length === 1) {
+                // 只有一个匹配，直接处理
+                handleSingleMatch(matchedAlumni[0]);
+            } else {
+                // 多个匹配，显示选择选项
+                showDuplicateOptions(matchedAlumni);
+            }
+        }
+        
+        // 处理单个匹配
+        function handleSingleMatch(alumni) {
+            if (claimedList[alumni.id]) {
+                showResult(`${alumni.name} - 您已经领取过礼品了 ✅`, 'taken');
+            } else {
+                claimGift(alumni);
+            }
+            hideDuplicateOptions();
+        }
+        
+        // 显示重名选择项
+        function showDuplicateOptions(matchedAlumni) {
+            const duplicateOptions = document.getElementById('duplicateOptions');
+            const duplicateList = document.getElementById('duplicateList');
+            
+            duplicateList.innerHTML = '';
+            
+            matchedAlumni.forEach((alumni, index) => {
+                const item = document.createElement('div');
+                item.className = 'duplicate-item';
+                
+                const isClaimed = claimedList[alumni.id];
+                const status = isClaimed ? '已领取' : '可领取';
+                const statusClass = isClaimed ? 'status-taken' : 'status-available';
+                
+                item.innerHTML = `
+                    <div>
+                        <span class="duplicate-name">${alumni.name}</span>
+                        <span class="duplicate-status ${statusClass}">${status}</span>
+                    </div>
+                    <button class="duplicate-btn" 
+                            onclick="selectAlumni('${alumni.id}')" 
+                            ${isClaimed ? 'disabled' : ''}>
+                        ${isClaimed ? '已领取' : '选择此项'}
+                    </button>
+                `;
+                
+                duplicateList.appendChild(item);
+            });
+            
+            duplicateOptions.style.display = 'block';
+            hideResult();
+        }
+        
+        // 隐藏重名选择项
+        function hideDuplicateOptions() {
+            document.getElementById('duplicateOptions').style.display = 'none';
+        }
+        
+        // 选择特定校友
+        function selectAlumni(alumniId) {
+            const alumni = alumniList.find(a => a.id === alumniId);
+            if (alumni) {
+                claimGift(alumni);
+                hideDuplicateOptions();
+            }
+        }
+        
+        // 领取礼品
+        function claimGift(alumni) {
+            claimedList[alumni.id] = {
+                name: alumni.name,
+                timestamp: new Date().toISOString(),
+                date: new Date().toISOString().split('T')[0]
+            };
+            
+            saveClaimedList();
+            updateStats();
+            showResult(`恭喜 ${alumni.name}！礼品领取成功 🎉`, 'available');
+            
+            // 清空输入框
+            document.getElementById('nameInput').value = '';
+        }
+        
+        // 显示结果
+        function showResult(message, type) {
+            const result = document.getElementById('result');
+            result.textContent = message;
+            result.className = `result ${type}`;
+            
+            result.offsetHeight;
+            result.classList.add('show');
+            
+            setTimeout(() => {
+                result.classList.remove('show');
+            }, 5000);
+        }
+        
+        // 隐藏结果
+        function hideResult() {
+            const result = document.getElementById('result');
+            result.classList.remove('show');
+        }
+        
+        // 更新统计
+        function updateStats() {
+            const totalNames = alumniList.length;
+            const claimedCount = Object.keys(claimedList).length;
+            const remainingCount = totalNames - claimedCount;
+            
+            document.getElementById('totalNames').textContent = totalNames;
+            document.getElementById('claimedCount').textContent = claimedCount;
+            document.getElementById('remainingCount').textContent = remainingCount;
+        }
+        
+        // 导出数据
+        function exportData() {
+            if (Object.keys(claimedList).length === 0) {
+                showResult('暂无领取记录可导出', 'not-found');
+                return;
+            }
+            
+            const records = Object.values(claimedList).map(record => {
+                return `${record.name},${record.timestamp}`;
+            });
+            
+            const csvContent = '姓名,领取时间\n' + records.join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `领取记录_${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            showResult('领取记录导出成功！', 'available');
+        }
+        
+        // 清空已领取数据
+        function clearClaimedData() {
+            if (confirm('确定要清空所有领取记录吗？此操作无法撤销！')) {
+                claimedList = {};
+                localStorage.removeItem(CLAIMED_LIST_KEY);
+                updateStats();
+                showResult('领取记录已清空', 'taken');
+            }
+        }
+        
+        // 回车键支持
+        document.getElementById('nameInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                checkName();
+            }
+        });
+        
+        // 防止页面缩放
+        document.addEventListener('touchstart', function(event) {
+            if (event.touches.length > 1) {
+                event.preventDefault();
+            }
+        }, { passive: false });
+        
+        let lastTouchEnd = 0;
+        document.addEventListener('touchend', function(event) {
+            const now = (new Date()).getTime();
+            if (now - lastTouchEnd <= 300) {
+                event.preventDefault();
+            }
+            lastTouchEnd = now;
+        }, false);
+    </script>
+</body>
+</html>
