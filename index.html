@@ -45,50 +45,53 @@
             margin-bottom: 30px;
         }
         
-        .file-upload {
+        .loading-container {
             margin-bottom: 20px;
             padding: 15px;
-            border: 2px dashed #ddd;
             border-radius: 12px;
             background: #f8f9fa;
+            border: 2px solid #e9ecef;
         }
         
-        .file-input {
-            width: 100%;
-            padding: 10px;
+        .loading-text {
             font-size: 14px;
-            border: 1px solid #ddd;
-            border-radius: 8px;
+            color: #007bff;
             margin-bottom: 10px;
         }
         
-        .upload-btn {
-            width: 100%;
-            padding: 10px;
+        .loading-spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            padding: 15px;
+            border-radius: 12px;
+            margin-bottom: 20px;
             font-size: 14px;
-            color: white;
-            background: #28a745;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
         }
         
-        .upload-btn:hover {
-            background: #218838;
-        }
-        
-        .upload-status {
-            margin-top: 10px;
-            padding: 10px;
-            border-radius: 8px;
-            font-size: 14px;
-            display: none;
-        }
-        
-        .upload-status.success {
+        .success-message {
             background: #d4edda;
             color: #155724;
             border: 1px solid #c3e6cb;
+            padding: 15px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            font-size: 14px;
         }
         
         .input-group {
@@ -129,7 +132,7 @@
             margin-bottom: 20px;
         }
         
-        .check-btn:hover {
+        .check-btn:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
         }
@@ -320,6 +323,10 @@
             }
         }
         
+        .hidden {
+            display: none;
+        }
+        
         /* 微信适配 */
         @media screen and (max-width: 480px) {
             .container {
@@ -341,26 +348,31 @@
 <body>
     <div class="container animation">
         <h1 class="title">🎁 校友礼品领取系统</h1>
-        <p class="subtitle">请先上传校友名单，然后输入姓名领取礼品</p>
+        <p class="subtitle">输入您的姓名查询礼品领取状态</p>
         
-        <!-- 文件上传区域 -->
-        <div class="file-upload">
-            <input type="file" class="file-input" id="csvFile" accept=".csv" />
-            <button class="upload-btn" onclick="uploadCSV()">上传校友名单 (CSV)</button>
-            <div class="upload-status" id="uploadStatus"></div>
+        <!-- 加载状态 -->
+        <div class="loading-container" id="loadingContainer">
+            <div class="loading-text" id="loadingText">正在加载校友名单...</div>
+            <div class="loading-spinner" id="loadingSpinner"></div>
         </div>
+        
+        <!-- 错误信息 -->
+        <div class="error-message hidden" id="errorMessage"></div>
+        
+        <!-- 成功信息 -->
+        <div class="success-message hidden" id="successMessage"></div>
         
         <div class="stats">
             <div class="stat-item">
-                <div class="stat-number" id="totalNames">0</div>
+                <div class="stat-number" id="totalNames">-</div>
                 <div class="stat-label">校友总数</div>
             </div>
             <div class="stat-item">
-                <div class="stat-number" id="claimedCount">0</div>
+                <div class="stat-number" id="claimedCount">-</div>
                 <div class="stat-label">已领取</div>
             </div>
             <div class="stat-item">
-                <div class="stat-number" id="remainingCount">0</div>
+                <div class="stat-number" id="remainingCount">-</div>
                 <div class="stat-label">待领取</div>
             </div>
         </div>
@@ -386,8 +398,14 @@
     </div>
 
     <script>
+        // 配置信息 - 请修改为你的GitHub信息
+        const CONFIG = {
+            githubUser: 'mrxuan18',        // 你的GitHub用户名
+            repoName: 'name-checker',      // 你的仓库名
+            fileName: 'alumni.csv'         // 校友名单文件名
+        };
+        
         // 存储键名
-        const ALUMNI_LIST_KEY = 'alumniList';
         const CLAIMED_LIST_KEY = 'claimedList';
         
         let alumniList = []; // 校友名单
@@ -395,37 +413,50 @@
         
         // 初始化
         document.addEventListener('DOMContentLoaded', function() {
-            loadAlumniList();
+            loadAlumniFromGitHub();
             loadClaimedList();
-            updateStats();
         });
         
-        // 上传CSV文件
-        function uploadCSV() {
-            const fileInput = document.getElementById('csvFile');
-            const file = fileInput.files[0];
-            
-            if (!file) {
-                showUploadStatus('请先选择CSV文件', 'error');
-                return;
-            }
-            
-            if (!file.name.toLowerCase().endsWith('.csv')) {
-                showUploadStatus('请上传CSV格式的文件', 'error');
-                return;
-            }
-            
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const csvText = e.target.result;
-                    parseCSV(csvText);
-                } catch (error) {
-                    showUploadStatus('文件读取失败，请检查文件格式', 'error');
+        // 从GitHub加载校友名单
+        async function loadAlumniFromGitHub() {
+            try {
+                showLoading('正在加载校友名单...');
+                
+                const url = `https://raw.githubusercontent.com/${CONFIG.githubUser}/${CONFIG.repoName}/main/${CONFIG.fileName}`;
+                
+                const response = await fetch(url);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: 无法找到文件`);
                 }
-            };
-            
-            reader.readAsText(file, 'UTF-8');
+                
+                const csvText = await response.text();
+                
+                if (!csvText.trim()) {
+                    throw new Error('CSV文件为空');
+                }
+                
+                parseCSV(csvText);
+                hideLoading();
+                showSuccess(`成功加载 ${alumniList.length} 位校友信息`);
+                enableInput();
+                updateStats();
+                
+            } catch (error) {
+                console.error('加载校友名单失败:', error);
+                hideLoading();
+                
+                let errorMsg = '校友名单加载失败';
+                if (error.message.includes('404')) {
+                    errorMsg = `未找到文件 ${CONFIG.fileName}，请确认文件已上传到仓库根目录`;
+                } else if (error.message.includes('403')) {
+                    errorMsg = '仓库访问被拒绝，请确认仓库为公开状态';
+                } else {
+                    errorMsg = `加载失败: ${error.message}`;
+                }
+                
+                showError(errorMsg);
+            }
         }
         
         // 解析CSV
@@ -437,7 +468,7 @@
                 const columns = line.split(',');
                 const name = columns[0] ? columns[0].trim().replace(/"/g, '') : '';
                 
-                if (name && name !== '姓名' && name !== 'name') { // 跳过表头
+                if (name && name !== '姓名' && name !== 'name' && name !== '名字') { // 跳过表头
                     names.push({
                         id: `${name}_${index}`, // 唯一ID
                         name: name,
@@ -447,42 +478,48 @@
             });
             
             if (names.length === 0) {
-                showUploadStatus('CSV文件中没有找到有效的姓名数据', 'error');
-                return;
+                throw new Error('CSV文件中没有找到有效的姓名数据');
             }
             
             alumniList = names;
-            localStorage.setItem(ALUMNI_LIST_KEY, JSON.stringify(alumniList));
-            
-            showUploadStatus(`成功导入 ${names.length} 位校友信息`, 'success');
-            
-            // 启用输入功能
-            document.getElementById('nameInput').disabled = false;
-            document.getElementById('checkBtn').disabled = false;
-            
-            updateStats();
         }
         
-        // 显示上传状态
-        function showUploadStatus(message, type) {
-            const status = document.getElementById('uploadStatus');
-            status.textContent = message;
-            status.className = `upload-status ${type}`;
-            status.style.display = 'block';
+        // 显示加载状态
+        function showLoading(message) {
+            document.getElementById('loadingText').textContent = message;
+            document.getElementById('loadingContainer').classList.remove('hidden');
+            document.getElementById('errorMessage').classList.add('hidden');
+            document.getElementById('successMessage').classList.add('hidden');
+        }
+        
+        // 隐藏加载状态
+        function hideLoading() {
+            document.getElementById('loadingContainer').classList.add('hidden');
+        }
+        
+        // 显示错误信息
+        function showError(message) {
+            document.getElementById('errorMessage').textContent = message;
+            document.getElementById('errorMessage').classList.remove('hidden');
+            document.getElementById('successMessage').classList.add('hidden');
+        }
+        
+        // 显示成功信息
+        function showSuccess(message) {
+            document.getElementById('successMessage').textContent = message;
+            document.getElementById('successMessage').classList.remove('hidden');
+            document.getElementById('errorMessage').classList.add('hidden');
             
+            // 3秒后自动隐藏
             setTimeout(() => {
-                status.style.display = 'none';
+                document.getElementById('successMessage').classList.add('hidden');
             }, 3000);
         }
         
-        // 加载校友名单
-        function loadAlumniList() {
-            const stored = localStorage.getItem(ALUMNI_LIST_KEY);
-            if (stored) {
-                alumniList = JSON.parse(stored);
-                document.getElementById('nameInput').disabled = false;
-                document.getElementById('checkBtn').disabled = false;
-            }
+        // 启用输入功能
+        function enableInput() {
+            document.getElementById('nameInput').disabled = false;
+            document.getElementById('checkBtn').disabled = false;
         }
         
         // 加载已领取记录
@@ -551,7 +588,7 @@
                 
                 item.innerHTML = `
                     <div>
-                        <span class="duplicate-name">${alumni.name}</span>
+                        <span class="duplicate-name">${alumni.name} #${index + 1}</span>
                         <span class="duplicate-status ${statusClass}">${status}</span>
                     </div>
                     <button class="duplicate-btn" 
