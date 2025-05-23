@@ -458,7 +458,12 @@
 王刚
 王刚
 李明
-李明`
+李明`,
+
+            // 性能优化配置
+            batchSize: 1000,                             // 批处理大小
+            processingDelay: 10,                         // 批处理间隔(毫秒)
+            maxLoadTime: 30000                           // 最大加载时间(毫秒)
         };
         
         let alumniList = []; // 校友名单
@@ -504,8 +509,8 @@
                     throw new Error('CSV文件为空');
                 }
                 
+                // 使用优化后的CSV解析
                 parseCSV(csvText);
-                showSuccess(`成功从GitHub加载 ${alumniList.length} 位校友信息`);
                 
             } catch (error) {
                 console.error('从GitHub加载校友名单失败:', error);
@@ -516,25 +521,18 @@
                 setTimeout(() => {
                     loadEmbeddedCSV();
                 }, 1000);
-                return;
             }
-            
-            hideLoading();
-            enableInput();
-            updateStats();
         }
         
         // 加载内嵌CSV
         function loadEmbeddedCSV() {
             try {
-                showLoading('正在加载校友名单...');
+                showLoading('正在加载备用校友名单...');
                 parseCSV(CONFIG.embeddedCSV);
-                hideLoading();
-                showSuccess(`成功加载 ${alumniList.length} 位校友信息`);
-                enableInput();
-                updateStats();
             } catch (error) {
-                showError('校友名单加载失败');
+                console.error('加载内嵌CSV失败:', error);
+                showError('校友名单加载失败: ' + error.message);
+                hideLoading();
             }
         }
         
@@ -675,27 +673,100 @@
         
         // 解析CSV
         function parseCSV(csvText) {
-            const lines = csvText.split('\n').filter(line => line.trim());
-            const names = [];
+            showLoading('正在处理校友名单...');
             
-            lines.forEach((line, index) => {
+            // 使用延迟处理以避免阻塞UI
+            setTimeout(() => {
+                try {
+                    const lines = csvText.split('\n').filter(line => line.trim());
+                    const names = [];
+                    
+                    // 进度指示变量
+                    const totalLines = lines.length;
+                    const updateInterval = Math.max(1, Math.floor(totalLines / 10)); // 更新10次进度
+                    
+                    // 分批处理大型CSV以避免UI冻结
+                    processLinesInBatches(lines, 0, 1000, names, totalLines, updateInterval);
+                    
+                } catch (error) {
+                    console.error('处理CSV时出错:', error);
+                    showError('CSV处理错误: ' + error.message);
+                    hideLoading();
+                    
+                    // 尝试加载备用数据
+                    if (CONFIG.embeddedCSV && csvText !== CONFIG.embeddedCSV) {
+                        setTimeout(() => {
+                            loadEmbeddedCSV();
+                        }, 1000);
+                    }
+                }
+            }, 100);
+        }
+        
+        // 分批处理CSV行
+        function processLinesInBatches(lines, startIndex, batchSize, names, totalLines, updateInterval) {
+            const endIndex = Math.min(startIndex + batchSize, lines.length);
+            
+            for (let i = startIndex; i < endIndex; i++) {
+                const line = lines[i];
                 const columns = line.split(',');
                 const name = columns[0] ? columns[0].trim().replace(/"/g, '') : '';
                 
                 if (name && name !== '姓名' && name !== 'name' && name !== '名字' && !name.includes('请在这里添加')) {
                     names.push({
-                        id: `${name}_${index}`,
+                        id: `${name}_${i}`,
                         name: name,
-                        originalIndex: index
+                        originalIndex: i
                     });
                 }
-            });
-            
-            if (names.length === 0) {
-                throw new Error('CSV文件中没有找到有效的姓名数据');
+                
+                // 更新处理进度
+                if (i % updateInterval === 0) {
+                    const progress = Math.floor((i / totalLines) * 100);
+                    document.getElementById('loadingText').textContent = `正在处理校友名单... ${progress}%`;
+                }
             }
             
+            if (endIndex < lines.length) {
+                // 还有更多行要处理，安排下一批
+                setTimeout(() => {
+                    processLinesInBatches(lines, endIndex, batchSize, names, totalLines, updateInterval);
+                }, 0);
+            } else {
+                // 所有行都已处理完毕
+                finishCSVProcessing(names);
+            }
+        }
+        
+        // 完成CSV处理
+        function finishCSVProcessing(names) {
+            if (names.length === 0) {
+                showError('CSV文件中没有找到有效的姓名数据');
+                hideLoading();
+                return;
+            }
+            
+            // 构建姓名索引以加快搜索
             alumniList = names;
+            buildNameIndex(names);
+            
+            hideLoading();
+            showSuccess(`成功加载 ${alumniList.length} 位校友信息`);
+            enableInput();
+            updateStats();
+        }
+        
+        // 构建姓名索引以加快搜索
+        let nameIndex = {};
+        function buildNameIndex(names) {
+            nameIndex = {};
+            for (let i = 0; i < names.length; i++) {
+                const name = names[i].name;
+                if (!nameIndex[name]) {
+                    nameIndex[name] = [];
+                }
+                nameIndex[name].push(i);
+            }
         }
         
         // 显示加载状态
@@ -704,6 +775,10 @@
             document.getElementById('loadingContainer').classList.remove('hidden');
             document.getElementById('errorMessage').classList.add('hidden');
             document.getElementById('successMessage').classList.add('hidden');
+            
+            // 禁用输入框和查询按钮
+            document.getElementById('nameInput').disabled = true;
+            document.getElementById('checkBtn').disabled = true;
         }
         
         // 隐藏加载状态
@@ -754,18 +829,19 @@
                 return;
             }
             
-            const matchedAlumni = alumniList.filter(alumni => alumni.name === name);
-            
-            if (matchedAlumni.length === 0) {
+            // 使用索引快速查找，而不是过滤整个数组
+            if (nameIndex[name]) {
+                const indices = nameIndex[name];
+                const matchedAlumni = indices.map(index => alumniList[index]);
+                
+                if (matchedAlumni.length === 1) {
+                    handleSingleMatch(matchedAlumni[0]);
+                } else {
+                    showDuplicateOptions(matchedAlumni);
+                }
+            } else {
                 showResult(`抱歉，未找到 "${name}" 的校友信息\n您的名字不在会计校友数据库内，请找工作人员处理`, 'not-found');
                 hideDuplicateOptions();
-                return;
-            }
-            
-            if (matchedAlumni.length === 1) {
-                handleSingleMatch(matchedAlumni[0]);
-            } else {
-                showDuplicateOptions(matchedAlumni);
             }
         }
         
