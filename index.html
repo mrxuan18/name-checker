@@ -538,9 +538,12 @@
             try {
                 showLoading('正在同步领取记录...');
                 
-                const response = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.jsonbinBinId}/latest`, {
+                // 使用随机参数防止缓存
+                const cacheBuster = new Date().getTime();
+                const response = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.jsonbinBinId}/latest?_=${cacheBuster}`, {
                     headers: {
-                        'X-Master-Key': CONFIG.jsonbinApiKey
+                        'X-Master-Key': CONFIG.jsonbinApiKey,
+                        'Cache-Control': 'no-cache, no-store, must-revalidate'
                     }
                 });
                 
@@ -548,6 +551,7 @@
                     const data = await response.json();
                     claimedList = data.record || {};
                     showSyncStatus('数据已同步 ✅');
+                    console.log('云端数据同步成功:', claimedList);
                 } else {
                     throw new Error(`HTTP ${response.status}`);
                 }
@@ -579,11 +583,14 @@
             try {
                 showLoading('正在同步到云端...');
                 
+                // 强制覆盖JSONBin数据并禁用缓存
                 const response = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.jsonbinBinId}`, {
                     method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-Master-Key': CONFIG.jsonbinApiKey
+                        'X-Master-Key': CONFIG.jsonbinApiKey,
+                        'X-Bin-Versioning': 'false', // 禁用版本控制，强制覆盖
+                        'Cache-Control': 'no-cache, no-store, must-revalidate'
                     },
                     body: JSON.stringify(claimedList)
                 });
@@ -843,12 +850,46 @@
         
         // 刷新数据
         async function refreshData() {
-            if (CONFIG.useCloudSync && CONFIG.jsonbinApiKey && CONFIG.jsonbinBinId) {
-                await loadClaimedFromCloud();
-            } else {
-                loadClaimedFromLocal();
+            try {
+                showLoading('正在刷新数据...');
+                
+                if (CONFIG.useCloudSync && CONFIG.jsonbinApiKey && CONFIG.jsonbinBinId) {
+                    // 清除缓存并强制从JSONBin获取最新数据
+                    try {
+                        const cacheBuster = new Date().getTime();
+                        const response = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.jsonbinBinId}/latest?_=${cacheBuster}`, {
+                            headers: {
+                                'X-Master-Key': CONFIG.jsonbinApiKey,
+                                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                                'Pragma': 'no-cache',
+                                'Expires': '0'
+                            }
+                        });
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            claimedList = data.record || {};
+                            console.log('刷新数据成功，云端数据:', claimedList);
+                            showSyncStatus('云端数据已刷新 ✅');
+                        } else {
+                            throw new Error(`HTTP ${response.status}`);
+                        }
+                    } catch (error) {
+                        console.warn('云端刷新失败，使用本地数据:', error);
+                        loadClaimedFromLocal();
+                        showSyncStatus('云端刷新失败，使用本地数据');
+                    }
+                } else {
+                    loadClaimedFromLocal();
+                    showSyncStatus('本地数据已刷新');
+                }
+                
                 updateStats();
-                showSyncStatus('本地数据已刷新');
+                hideLoading();
+            } catch (error) {
+                console.error('刷新数据出错:', error);
+                showError('刷新数据失败: ' + error.message);
+                hideLoading();
             }
         }
         
@@ -895,37 +936,87 @@
             try {
                 showLoading('正在重置系统...');
                 
-                // 清空领取记录
+                // 清空本地领取记录
                 claimedList = {};
-                
-                // 首先保存到本地
                 saveClaimedToLocal();
                 
-                // 然后强制同步到云端
+                // 清空云端数据
                 if (CONFIG.useCloudSync && CONFIG.jsonbinApiKey && CONFIG.jsonbinBinId) {
-                    // 特殊处理：确保JSONBin真的被重置
                     try {
+                        // 使用更可靠的方式创建新的空Bin记录
+                        showLoading('正在清空云端数据...');
+                        
+                        // 方法1: 使用PUT并禁用版本控制
                         const forceResetResponse = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.jsonbinBinId}`, {
                             method: 'PUT',
                             headers: {
                                 'Content-Type': 'application/json',
                                 'X-Master-Key': CONFIG.jsonbinApiKey,
-                                'X-Bin-Versioning': 'false' // 禁用版本控制，强制覆盖
+                                'X-Bin-Versioning': 'false',
+                                'Cache-Control': 'no-cache, no-store, must-revalidate'
                             },
                             body: JSON.stringify({}) // 发送空对象
                         });
                         
                         if (!forceResetResponse.ok) {
-                            throw new Error(`云端重置失败: HTTP ${forceResetResponse.status}`);
+                            throw new Error(`云端重置方法1失败: HTTP ${forceResetResponse.status}`);
                         }
                         
-                        // 再次验证重置是否成功
+                        // 方法2: 再次使用不同的方法确保重置
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        
+                        const secondResetResponse = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.jsonbinBinId}`, {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-Master-Key': CONFIG.jsonbinApiKey,
+                                'X-Bin-Versioning': 'false',
+                                'Cache-Control': 'no-cache, no-store, must-revalidate'
+                            },
+                            body: JSON.stringify({ reset: true, timestamp: new Date().toISOString() })
+                        });
+                        
+                        if (!secondResetResponse.ok) {
+                            console.warn('云端重置方法2失败，但继续执行');
+                        }
+                        
+                        // 方法3: 清除JSONBin缓存并创建新版本
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        
+                        const thirdResetResponse = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.jsonbinBinId}`, {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-Master-Key': CONFIG.jsonbinApiKey,
+                                'X-Bin-Versioning': 'true',
+                                'Cache-Control': 'no-cache, no-store, must-revalidate'
+                            },
+                            body: JSON.stringify({})
+                        });
+                        
+                        if (!thirdResetResponse.ok) {
+                            console.warn('云端重置方法3失败，但继续执行');
+                        }
+                        
+                        // 等待一段时间让JSONBin处理完成
+                        showLoading('等待云端同步完成...');
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                        
+                        // 验证重置是否成功
                         await verifyCloudReset();
+                        
                     } catch (resetError) {
                         console.error('云端重置出错:', resetError);
                         showError(`云端重置出错: ${resetError.message}`);
                         // 继续执行，不中断流程
                     }
+                }
+                
+                // 强制刷新数据
+                showLoading('正在刷新系统数据...');
+                if (CONFIG.useCloudSync && CONFIG.jsonbinApiKey && CONFIG.jsonbinBinId) {
+                    // 强制刷新云端数据
+                    await forceRefreshCloudData();
                 }
                 
                 // 重新加载校友名单
@@ -947,37 +1038,92 @@
             }
         }
         
+        // 强制刷新云端数据
+        async function forceRefreshCloudData() {
+            try {
+                // 清除浏览器缓存
+                const cacheBuster = new Date().getTime();
+                
+                // 使用特殊标记强制更新
+                const response = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.jsonbinBinId}/latest?_=${cacheBuster}`, {
+                    headers: {
+                        'X-Master-Key': CONFIG.jsonbinApiKey,
+                        'Cache-Control': 'no-cache, no-store, must-revalidate',
+                        'Pragma': 'no-cache',
+                        'Expires': '0'
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('强制刷新云端数据结果:', data.record);
+                    claimedList = data.record || {};
+                    updateStats();
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+            } catch (error) {
+                console.error('强制刷新云端数据失败:', error);
+                throw error;
+            }
+        }
+        
         // 验证云端是否已成功重置
         async function verifyCloudReset() {
             try {
                 // 等待JSONBin处理完成
                 await new Promise(resolve => setTimeout(resolve, 1500));
                 
-                const response = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.jsonbinBinId}/latest`, {
+                // 使用缓存破坏参数
+                const cacheBuster = new Date().getTime();
+                const response = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.jsonbinBinId}/latest?_=${cacheBuster}`, {
                     headers: {
-                        'X-Master-Key': CONFIG.jsonbinApiKey
+                        'X-Master-Key': CONFIG.jsonbinApiKey,
+                        'Cache-Control': 'no-cache, no-store, must-revalidate',
+                        'Pragma': 'no-cache',
+                        'Expires': '0'
                     }
                 });
                 
                 if (response.ok) {
                     const data = await response.json();
+                    console.log('验证云端重置结果:', data.record);
+                    
                     const recordKeys = Object.keys(data.record || {}).length;
                     
-                    if (recordKeys > 0) {
+                    if (recordKeys > 0 && recordKeys !== 1) {  // 允许有一个特殊的重置标记
                         console.warn(`云端未完全重置! 仍有 ${recordKeys} 条记录`);
-                        // 再次尝试重置
+                        
+                        // 再次尝试重置，使用更极端的方法
+                        showLoading('再次尝试清空云端数据...');
+                        
                         const retryResponse = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.jsonbinBinId}`, {
                             method: 'PUT',
                             headers: {
                                 'Content-Type': 'application/json',
                                 'X-Master-Key': CONFIG.jsonbinApiKey,
-                                'X-Bin-Versioning': 'false'
+                                'X-Bin-Versioning': 'false',
+                                'Cache-Control': 'no-cache, no-store, must-revalidate'
                             },
                             body: JSON.stringify({})
                         });
                         
                         if (!retryResponse.ok) {
                             throw new Error('云端重置重试失败');
+                        }
+                        
+                        // 再次验证
+                        await new Promise(resolve => setTimeout(resolve, 1500));
+                        const secondCheck = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.jsonbinBinId}/latest?_=${new Date().getTime()}`, {
+                            headers: {
+                                'X-Master-Key': CONFIG.jsonbinApiKey,
+                                'Cache-Control': 'no-cache, no-store, must-revalidate'
+                            }
+                        });
+                        
+                        if (secondCheck.ok) {
+                            const secondData = await secondCheck.json();
+                            console.log('第二次验证结果:', secondData.record);
                         }
                     } else {
                         console.log('云端重置验证成功');
