@@ -414,7 +414,7 @@
             <input type="text" class="name-input" id="nameInput" placeholder="请输入您的姓名..." maxlength="20" disabled>
         </div>
         
-        <button class="check-btn" id="checkBtn" onclick="checkName()" disabled>查询领取状态</button>
+        <button class="check-btn" id="checkBtn" disabled>查询领取状态</button>
         
         <!-- 重名选择区域 -->
         <div class="duplicate-options" id="duplicateOptions">
@@ -1003,11 +1003,15 @@
             showResult('领取记录导出成功！', 'available');
         }
         
-        // 回车键支持
+        // 回车键和按钮点击支持
         document.getElementById('nameInput').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 checkName();
             }
+        });
+        
+        document.getElementById('checkBtn').addEventListener('click', function() {
+            checkName();
         });
         
         // 防止页面缩放
