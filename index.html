@@ -265,27 +265,25 @@
         }
         
         .stats {
-            display: flex;
-            justify-content: space-between;
             background: #f8f9fa;
             padding: 15px;
             border-radius: 12px;
             margin-bottom: 20px;
+            text-align: center;
         }
         
         .stat-item {
             text-align: center;
-            flex: 1;
         }
         
         .stat-number {
-            font-size: 20px;
+            font-size: 24px;
             font-weight: bold;
             color: #002FA7; /* 克莱因蓝 */
         }
         
         .stat-label {
-            font-size: 12px;
+            font-size: 14px;
             color: #666;
             margin-top: 5px;
         }
@@ -397,16 +395,8 @@
         
         <div class="stats">
             <div class="stat-item">
-                <div class="stat-number" id="totalNames">-</div>
-                <div class="stat-label">校友总数</div>
-            </div>
-            <div class="stat-item">
                 <div class="stat-number" id="claimedCount">-</div>
-                <div class="stat-label">已领取</div>
-            </div>
-            <div class="stat-item">
-                <div class="stat-number" id="remainingCount">-</div>
-                <div class="stat-label">待领取</div>
+                <div class="stat-label">已领取人数</div>
             </div>
         </div>
         
@@ -847,6 +837,11 @@
         
         // 处理单个匹配
         function handleSingleMatch(alumni) {
+            if (!alumni) {
+                showResult(`系统错误，请重试`, 'not-found');
+                return;
+            }
+            
             if (claimedList[alumni.id]) {
                 showResult(`${alumni.name} - 您已经领取过礼品了 ✅`, 'taken');
             } else {
@@ -958,13 +953,8 @@
         
         // 更新统计
         function updateStats() {
-            const totalNames = alumniList.length;
             const claimedCount = Object.keys(claimedList).length;
-            const remainingCount = totalNames - claimedCount;
-            
-            document.getElementById('totalNames').textContent = totalNames;
             document.getElementById('claimedCount').textContent = claimedCount;
-            document.getElementById('remainingCount').textContent = remainingCount;
         }
         
         // 显示JSONBin管理信息
