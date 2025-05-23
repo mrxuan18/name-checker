@@ -939,7 +939,7 @@
             closeButton.textContent = '关闭';
             closeButton.style.marginTop = '15px';
             closeButton.style.padding = '8px 15px';
-                            closeButton.style.backgroundColor = '#002FA7'; /* 克莱因蓝 */
+            closeButton.style.backgroundColor = '#002FA7'; /* 克莱因蓝 */
             closeButton.style.color = 'white';
             closeButton.style.border = 'none';
             closeButton.style.borderRadius = '5px';
@@ -960,8 +960,83 @@
             });
         }
         
-        // 回车键支持
+        // 导出数据
         function exportData() {
+            // 自定义密码输入框而不是使用prompt
+            hideResult(); // 先隐藏当前结果
+            
+            // 创建模态框
+            const modal = document.createElement('div');
+            modal.style.position = 'fixed';
+            modal.style.top = '0';
+            modal.style.left = '0';
+            modal.style.right = '0';
+            modal.style.bottom = '0';
+            modal.style.backgroundColor = 'rgba(0,0,0,0.5)';
+            modal.style.display = 'flex';
+            modal.style.justifyContent = 'center';
+            modal.style.alignItems = 'center';
+            modal.style.zIndex = '1000';
+            
+            const modalContent = document.createElement('div');
+            modalContent.style.backgroundColor = 'white';
+            modalContent.style.padding = '20px';
+            modalContent.style.borderRadius = '10px';
+            modalContent.style.maxWidth = '90%';
+            modalContent.style.width = '300px';
+            modalContent.innerHTML = `
+                <h3 style="margin-top:0;color:#333;margin-bottom:15px;">请输入导出密码</h3>
+                <input type="password" id="exportPassword" style="width:100%;padding:8px;margin-bottom:15px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;" placeholder="请输入密码...">
+                <div style="display:flex;justify-content:flex-end;gap:10px;">
+                    <button id="cancelExport" style="padding:8px 15px;background:#f8f9fa;border:1px solid #ddd;border-radius:4px;cursor:pointer;">取消</button>
+                    <button id="confirmExport" style="padding:8px 15px;background:#002FA7;color:white;border:none;border-radius:4px;cursor:pointer;">确认</button>
+                </div>
+            `;
+            
+            modal.appendChild(modalContent);
+            document.body.appendChild(modal);
+            
+            // 获取输入框焦点
+            setTimeout(() => {
+                document.getElementById('exportPassword').focus();
+            }, 100);
+            
+            // 取消按钮
+            document.getElementById('cancelExport').addEventListener('click', function() {
+                document.body.removeChild(modal);
+            });
+            
+            // 点击背景关闭
+            modal.addEventListener('click', function(e) {
+                if (e.target === modal) {
+                    document.body.removeChild(modal);
+                }
+            });
+            
+            // 密码输入框回车支持
+            document.getElementById('exportPassword').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    document.getElementById('confirmExport').click();
+                }
+            });
+            
+            // 确认按钮
+            document.getElementById('confirmExport').addEventListener('click', function() {
+                const password = document.getElementById('exportPassword').value;
+                document.body.removeChild(modal);
+                
+                // 检查密码
+                if (password !== 'xy2025') {
+                    showResult('密码错误，无法导出记录', 'not-found');
+                    return;
+                }
+                
+                proceedWithExport();
+            });
+        }
+        
+        // 执行导出操作
+        function proceedWithExport() {
             if (Object.keys(claimedList).length === 0) {
                 showResult('暂无领取记录可导出', 'not-found');
                 return;
