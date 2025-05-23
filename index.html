@@ -466,20 +466,8 @@
         
         // 初始化
         document.addEventListener('DOMContentLoaded', function() {
-            // 添加全局事件监听，在用户交互时清除成功消息
-            document.addEventListener('click', function(e) {
-                // 如果用户点击了输入框或其他元素，并且不是结果区域本身
-                if (e.target.id !== 'result' && !e.target.closest('#result')) {
-                    // 检查是否是成功消息，是否应该保留
-                    const result = document.getElementById('result');
-                    // 只有当点击的是输入框、查询按钮或其他操作按钮时才清除
-                    if (e.target.id === 'nameInput' || e.target.id === 'checkBtn' || 
-                        e.target.classList.contains('action-btn') || 
-                        e.target.classList.contains('duplicate-btn')) {
-                        hideResult();
-                    }
-                }
-            });
+            // 使用全局变量存储计时器
+            window.resultTimer = null;
             
             if (CONFIG.useGitHubCSV) {
                 loadAlumniFromGitHub();
@@ -758,8 +746,6 @@
         
         // 检查姓名
         function checkName() {
-            hideResult(); // 隐藏当前显示的结果
-            
             const nameInput = document.getElementById('nameInput');
             const name = nameInput.value.trim();
             
@@ -862,8 +848,6 @@
         
         // 刷新数据
         async function refreshData() {
-            hideResult(); // 隐藏当前显示的结果
-            
             if (CONFIG.useCloudSync && CONFIG.jsonbinApiKey && CONFIG.jsonbinBinId) {
                 await loadClaimedFromCloud();
             } else {
@@ -879,21 +863,21 @@
             result.textContent = message;
             result.className = `result ${type}`;
             
-            result.offsetHeight; // 触发重排
+            // 显示结果
             result.classList.add('show');
             
-            // 只有非成功消息才自动隐藏
-            if (type !== 'available') {
-                setTimeout(() => {
-                    result.classList.remove('show');
-                }, 5000);
-            }
+            // 设置120秒后自动消失
+            clearTimeout(window.resultTimer); // 清除之前的计时器
+            window.resultTimer = setTimeout(() => {
+                result.classList.remove('show');
+            }, 120000); // 120秒 = 2分钟
         }
         
         // 隐藏结果
         function hideResult() {
             const result = document.getElementById('result');
             result.classList.remove('show');
+            clearTimeout(window.resultTimer);
         }
         
         // 更新统计
@@ -909,8 +893,6 @@
         
         // 显示JSONBin管理信息
         function showJsonBinInfo() {
-            hideResult(); // 隐藏当前显示的结果
-            
             if (!CONFIG.useCloudSync || !CONFIG.jsonbinApiKey || !CONFIG.jsonbinBinId) {
                 showResult('未配置云同步功能', 'not-found');
                 return;
